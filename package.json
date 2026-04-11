@@ -1,0 +1,19 @@
+{
+  "name": "md-server",
+  "version": "0.1.0",
+  "description": "Localhost markdown doc viewer for ~/handbook/",
+  "type": "module",
+  "scripts": {
+    "start": "bun run server.ts",
+    "dev": "bun --hot run server.ts"
+  },
+  "dependencies": {
+    "markdown-it": "^14.1.0",
+    "markdown-it-anchor": "^9.0.1",
+    "shiki": "^1.24.0"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "@types/markdown-it": "^14.1.2"
+  }
+}
