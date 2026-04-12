@@ -70,10 +70,87 @@ html, body {
 
 .app {
   display: grid;
-  grid-template-columns: var(--sidebar-w) 1fr var(--rail-w);
+  grid-template-columns: var(--sidebar-w) 6px 1fr var(--rail-w);
   min-height: 100vh;
   max-width: 1400px;
   margin: 0 auto;
+}
+body.resizing {
+  cursor: col-resize;
+  user-select: none;
+}
+body.resizing * {
+  pointer-events: none;
+}
+
+/* ---------- resizer (sidebar drag handle) ---------- */
+.resizer {
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  cursor: col-resize;
+  display: flex;
+  justify-content: center;
+  align-items: stretch;
+  z-index: 5;
+  touch-action: none;
+  user-select: none;
+}
+.resizer::before {
+  content: "";
+  display: block;
+  width: 1px;
+  background: var(--rule);
+  transition: background 0.12s ease, width 0.08s ease;
+}
+.resizer:hover::before,
+.resizer:focus-visible::before,
+.resizer.resizing::before {
+  width: 3px;
+  background: var(--accent);
+}
+.resizer:focus-visible { outline: none; }
+.resizer::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 2px;
+  height: 36px;
+  border-radius: 1px;
+  background: var(--text-faint);
+  opacity: 0;
+  transition: opacity 0.12s ease;
+}
+.resizer:hover::after,
+.resizer.resizing::after {
+  opacity: 0.5;
+}
+
+/* ---------- tooltip (sidebar hover preview) ---------- */
+.tooltip {
+  position: fixed;
+  z-index: 50;
+  padding: 6px 10px;
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  box-shadow: 0 6px 20px rgba(20, 18, 16, 0.12);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.35;
+  white-space: nowrap;
+  pointer-events: none;
+  max-width: min(520px, 50vw);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.tooltip[hidden] { display: none; }
+@media (prefers-color-scheme: dark) {
+  .tooltip {
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.5);
+  }
 }
 
 /* ---------- sidebar ---------- */

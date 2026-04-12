@@ -173,7 +173,7 @@ export function renderSidebar(tree: TreeNode[], activePath: string): string {
       }
       const href = "/" + n.relPath;
       const active = activePath === n.relPath ? " active" : "";
-      return `<li class="file${active}"><a href="${href}" title="${escapeHtml(n.name)}">
+      return `<li class="file${active}"><a href="${href}">
         <span class="tree-caret"></span>
         <span class="tree-icon">${ICON_FILE}</span>
         <span class="tree-name">${escapeHtml(n.name)}</span>
@@ -242,6 +242,7 @@ export function renderPage(opts: PageOptions): string {
     </header>
     ${opts.sidebarHtml}
   </aside>
+  <div class="resizer" id="resizer" role="separator" aria-orientation="vertical" aria-label="Resize sidebar" tabindex="0"></div>
   <main class="content-wrap">
     <div class="doc-header">
       <nav class="breadcrumbs" id="breadcrumbs">${opts.breadcrumbsHtml}</nav>
@@ -259,6 +260,7 @@ export function renderPage(opts: PageOptions): string {
   </main>
   <aside class="rail" id="rail">${opts.tocHtml}</aside>
 </div>
+<div class="tooltip" id="tooltip" hidden></div>
 <div class="search-palette" id="search-palette" hidden>
   <div class="search-box">
     <input type="text" id="search-input" placeholder="Search docs…" autocomplete="off" spellcheck="false">

@@ -98,17 +98,68 @@ function attachScrollSpy() {
   headings.forEach((h) => spyObserver.observe(h));
 }
 
-// ---------- sidebar collapsibles ----------
-function attachSidebarToggles() {
-  document.querySelectorAll(".tree .dir-toggle").forEach((btn) => {
-    btn.addEventListener("click", () => {
-      const li = btn.closest("li.dir");
-      if (!li) return;
-      if (li.hasAttribute("data-open")) li.removeAttribute("data-open");
-      else li.setAttribute("data-open", "");
-    });
+// ---------- sidebar collapsibles (persisted across navigation) ----------
+const FOLDER_STATE_KEY = "md-sidebar-folders";
+
+function loadFolderState() {
+  try {
+    return JSON.parse(localStorage.getItem(FOLDER_STATE_KEY) || "{}") || {};
+  } catch {
+    return {};
+  }
+}
+function saveFolderState(state) {
+  try {
+    localStorage.setItem(FOLDER_STATE_KEY, JSON.stringify(state));
+  } catch {}
+}
+function folderPathFromLi(li) {
+  // derive the folder's relPath from the first file/dir link inside it
+  const link = li.querySelector(":scope > ul a[href]");
+  if (link) {
+    const href = link.getAttribute("href") || "";
+    // strip leading / and trailing file segment to get folder path
+    const parts = href.replace(/^\//, "").split("/");
+    parts.pop();
+    return parts.join("/");
+  }
+  const nested = li.querySelector(":scope > ul li.dir");
+  if (nested) {
+    const inner = folderPathFromLi(nested);
+    if (inner) return inner.split("/").slice(0, -1).join("/");
+  }
+  return null;
+}
+
+function applyFolderState() {
+  const state = loadFolderState();
+  document.querySelectorAll(".tree li.dir").forEach((li) => {
+    const p = folderPathFromLi(li);
+    if (!p) return;
+    const pref = state[p];
+    if (pref === "open") li.setAttribute("data-open", "");
+    else if (pref === "closed") li.removeAttribute("data-open");
+    // no preference → trust server's data-open (auto-expand along active path)
   });
 }
+
+// event delegation on document — one listener, survives hot-swap reloads
+document.addEventListener("click", (e) => {
+  const btn = e.target.closest(".tree .dir-toggle");
+  if (!btn) return;
+  const li = btn.closest("li.dir");
+  if (!li) return;
+  e.preventDefault();
+  const isOpen = li.hasAttribute("data-open");
+  if (isOpen) li.removeAttribute("data-open");
+  else li.setAttribute("data-open", "");
+  const p = folderPathFromLi(li);
+  if (p) {
+    const state = loadFolderState();
+    state[p] = isOpen ? "closed" : "open";
+    saveFolderState(state);
+  }
+});
 
 // ---------- keyboard nav ----------
 let lastG = 0;
@@ -271,12 +322,136 @@ function attachToolbar() {
   }
 }
 
+// ---------- resizable sidebar ----------
+const SIDEBAR_STORAGE_KEY = "md-sidebar-w";
+const SIDEBAR_MIN = 200;
+const SIDEBAR_MAX = 520;
+
+function applySidebarWidth(px) {
+  document.documentElement.style.setProperty("--sidebar-w", px + "px");
+}
+
+function attachResizer() {
+  const resizer = document.getElementById("resizer");
+  if (!resizer) return;
+
+  const saved = parseInt(localStorage.getItem(SIDEBAR_STORAGE_KEY) || "", 10);
+  if (!Number.isNaN(saved) && saved >= SIDEBAR_MIN && saved <= SIDEBAR_MAX) {
+    applySidebarWidth(saved);
+  }
+
+  resizer.addEventListener("pointerdown", (e) => {
+    e.preventDefault();
+    const startX = e.clientX;
+    const startW = parseInt(
+      getComputedStyle(document.documentElement).getPropertyValue("--sidebar-w"),
+      10,
+    ) || 260;
+    document.body.classList.add("resizing");
+    resizer.classList.add("resizing");
+    try { resizer.setPointerCapture(e.pointerId); } catch {}
+
+    const onMove = (ev) => {
+      const dx = ev.clientX - startX;
+      const newW = Math.max(SIDEBAR_MIN, Math.min(SIDEBAR_MAX, startW + dx));
+      applySidebarWidth(newW);
+    };
+    const onUp = () => {
+      resizer.removeEventListener("pointermove", onMove);
+      resizer.removeEventListener("pointerup", onUp);
+      resizer.removeEventListener("pointercancel", onUp);
+      document.body.classList.remove("resizing");
+      resizer.classList.remove("resizing");
+      const finalW = parseInt(
+        getComputedStyle(document.documentElement).getPropertyValue("--sidebar-w"),
+        10,
+      );
+      if (!Number.isNaN(finalW)) localStorage.setItem(SIDEBAR_STORAGE_KEY, String(finalW));
+    };
+    resizer.addEventListener("pointermove", onMove);
+    resizer.addEventListener("pointerup", onUp);
+    resizer.addEventListener("pointercancel", onUp);
+  });
+
+  // keyboard-accessible: arrow keys nudge width by 20px
+  resizer.addEventListener("keydown", (e) => {
+    if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
+    e.preventDefault();
+    const w = parseInt(getComputedStyle(document.documentElement).getPropertyValue("--sidebar-w"), 10) || 260;
+    const step = e.key === "ArrowRight" ? 20 : -20;
+    const newW = Math.max(SIDEBAR_MIN, Math.min(SIDEBAR_MAX, w + step));
+    applySidebarWidth(newW);
+    localStorage.setItem(SIDEBAR_STORAGE_KEY, String(newW));
+  });
+
+  // double-click to reset to default
+  resizer.addEventListener("dblclick", () => {
+    document.documentElement.style.removeProperty("--sidebar-w");
+    localStorage.removeItem(SIDEBAR_STORAGE_KEY);
+  });
+}
+
+// ---------- hover tooltip for truncated sidebar filenames ----------
+function attachTooltip() {
+  const tip = document.getElementById("tooltip");
+  if (!tip) return;
+
+  let current = null;
+
+  function show(el) {
+    // only show if the name is actually truncated
+    if (el.scrollWidth <= el.clientWidth + 1) return;
+    tip.textContent = el.textContent;
+    tip.hidden = false;
+
+    // measure after content is set
+    const itemRect = el.getBoundingClientRect();
+    const tipRect = tip.getBoundingClientRect();
+
+    // prefer to the right of the sidebar item; flip left if not enough room
+    const gap = 10;
+    let left = itemRect.right + gap;
+    if (left + tipRect.width > window.innerWidth - 8) {
+      left = Math.max(8, itemRect.left - tipRect.width - gap);
+    }
+    let top = itemRect.top + (itemRect.height - tipRect.height) / 2;
+    top = Math.max(8, Math.min(window.innerHeight - tipRect.height - 8, top));
+
+    tip.style.left = left + "px";
+    tip.style.top = top + "px";
+  }
+  function hide() {
+    tip.hidden = true;
+    current = null;
+  }
+
+  // event delegation on document — survives hot-swap without rebinding
+  document.addEventListener("mouseover", (e) => {
+    const el = e.target.closest(".tree .tree-name");
+    if (!el || el === current) return;
+    current = el;
+    show(el);
+  });
+  document.addEventListener("mouseout", (e) => {
+    const el = e.target.closest(".tree .tree-name");
+    if (!el) return;
+    if (!e.relatedTarget || !e.relatedTarget.closest || !e.relatedTarget.closest(".tree .tree-name")) {
+      hide();
+    }
+  });
+  // hide when scrolling the sidebar or window
+  document.addEventListener("scroll", hide, true);
+  window.addEventListener("blur", hide);
+}
+
 // ---------- init ----------
 function attachDocFeatures() {
   attachCopyButtons();
   attachAnchorClicks();
   attachScrollSpy();
-  attachSidebarToggles();
+  applyFolderState();
 }
 attachToolbar();
+attachResizer();
+attachTooltip();
 attachDocFeatures();
