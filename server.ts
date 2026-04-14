@@ -26,6 +26,9 @@ try {
   process.exit(1);
 }
 const REAL_ROOT = await fs.realpath(DOC_ROOT);
+const REAL_HOME = process.env.HOME
+  ? await fs.realpath(process.env.HOME).catch(() => null)
+  : null;
 const SITE_NAME = process.env.SITE_NAME || path.basename(DOC_ROOT) || "docs";
 const PORT = parseInt(process.env.PORT || "4321", 10);
 const HOSTNAME = process.env.HOSTNAME_BIND || "127.0.0.1";
@@ -47,12 +50,21 @@ async function resolveSafe(reqPath: string): Promise<string | null> {
   const decoded = decodeURIComponent(reqPath);
   const cleaned = decoded.replace(/^\/+/, "");
   const literal = path.resolve(DOC_ROOT, cleaned);
+  // URL-level containment: the literal path (pre-symlink) must stay inside DOC_ROOT
+  // so a URL like /../.zshrc can never escape by string manipulation alone.
   if (literal !== DOC_ROOT && !literal.startsWith(DOC_ROOT + path.sep)) {
     return null;
   }
   try {
     const real = await fs.realpath(literal);
-    if (real !== REAL_ROOT && !real.startsWith(REAL_ROOT + path.sep)) return null;
+    // after symlink resolution, allow the real path to be inside DOC_ROOT, OR
+    // inside $HOME — so users can symlink external notes into their doc tree
+    // without the reader blocking them. Binding to 127.0.0.1 keeps this local.
+    const underDocRoot = real === REAL_ROOT || real.startsWith(REAL_ROOT + path.sep);
+    const underHome = REAL_HOME
+      ? (real === REAL_HOME || real.startsWith(REAL_HOME + path.sep))
+      : false;
+    if (!underDocRoot && !underHome) return null;
     return real;
   } catch {
     return null;

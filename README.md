@@ -23,8 +23,11 @@ Built as a personal handbook reader, but it works on any markdown tree.
 - **Syntax highlighting** via Shiki with paired light + dark themes.
 - **Refined editorial minimalism** — warm palette, paired light/dark via
   `prefers-color-scheme`, no animations beyond link hover fades.
-- **Safe by default** — binds to `127.0.0.1`, path-traversal and symlink
-  containment, 5 MB file cap, binary-content guard.
+- **Safe by default** — binds to `127.0.0.1` (no LAN exposure), URL-level
+  path-traversal blocked, 5 MB file cap, binary-content guard. Symlinks
+  inside the doc tree may resolve anywhere under `$HOME`, so you can
+  cross-reference notes from other project directories without fighting
+  the reader.
 - **Tiny** — ~800 LOC across server, template, client, and CSS. Single-file
   server, no bundler, plain template literals.
 
