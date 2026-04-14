@@ -221,21 +221,7 @@ function saveFolderState(state) {
   } catch {}
 }
 function folderPathFromLi(li) {
-  // derive the folder's relPath from the first file/dir link inside it
-  const link = li.querySelector(":scope > ul a[href]");
-  if (link) {
-    const href = link.getAttribute("href") || "";
-    // strip leading / and trailing file segment to get folder path
-    const parts = href.replace(/^\//, "").split("/");
-    parts.pop();
-    return parts.join("/");
-  }
-  const nested = li.querySelector(":scope > ul li.dir");
-  if (nested) {
-    const inner = folderPathFromLi(nested);
-    if (inner) return inner.split("/").slice(0, -1).join("/");
-  }
-  return null;
+  return li.getAttribute("data-path");
 }
 
 function applyFolderState() {

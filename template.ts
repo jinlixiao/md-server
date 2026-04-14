@@ -162,7 +162,7 @@ export function renderSidebar(tree: TreeNode[], activePath: string): string {
     const items = nodes.map((n) => {
       if (n.isDir) {
         const expanded = activePath.startsWith(n.relPath + "/") ? " data-open" : "";
-        return `<li class="dir"${expanded}>
+        return `<li class="dir" data-path="${escapeHtml(n.relPath)}"${expanded}>
           <button class="dir-toggle" type="button">
             <span class="tree-caret"></span>
             <span class="tree-icon">${ICON_FOLDER}</span>
