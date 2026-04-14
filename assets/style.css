@@ -555,6 +555,28 @@ body.resizing * {
   top: 0;
   max-height: 100vh;
   overflow-y: auto;
+  scroll-behavior: smooth;
+  scrollbar-width: thin;
+  scrollbar-color: var(--rule) transparent;
+  transition: -webkit-mask-image 0.15s ease, mask-image 0.15s ease;
+}
+.rail::-webkit-scrollbar { width: 6px; }
+.rail::-webkit-scrollbar-track { background: transparent; }
+.rail::-webkit-scrollbar-thumb { background: var(--rule); border-radius: 3px; }
+.rail::-webkit-scrollbar-thumb:hover { background: var(--text-faint); }
+
+/* soft fade at overflow edges — signals "there's more" without chrome */
+.rail.has-more-above {
+  -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 28px, #000 100%);
+          mask-image: linear-gradient(to bottom, transparent 0, #000 28px, #000 100%);
+}
+.rail.has-more-below {
+  -webkit-mask-image: linear-gradient(to top, transparent 0, #000 28px, #000 100%);
+          mask-image: linear-gradient(to top, transparent 0, #000 28px, #000 100%);
+}
+.rail.has-more-above.has-more-below {
+  -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 28px, #000 calc(100% - 28px), transparent 100%);
+          mask-image: linear-gradient(to bottom, transparent 0, #000 28px, #000 calc(100% - 28px), transparent 100%);
 }
 .toc {
   font-family: var(--font-sans);

@@ -1,7 +1,26 @@
 // Vendored fuse.js v7 import via esm.sh for zero-build client.
 import Fuse from "https://esm.sh/fuse.js@7.0.0";
 
-// ---------- live reload via hot-swap ----------
+// ---------- shared DOM swap (used by both WebSocket hot-reload and client nav) ----------
+async function swapTo(url, { cache = "default" } = {}) {
+  const res = await fetch(url, { cache });
+  if (!res.ok) throw new Error(`fetch ${url}: ${res.status}`);
+  const html = await res.text();
+  const doc = new DOMParser().parseFromString(html, "text/html");
+  const swap = (sel) => {
+    const fresh = doc.querySelector(sel);
+    const live = document.querySelector(sel);
+    if (fresh && live) live.innerHTML = fresh.innerHTML;
+  };
+  swap("#content");
+  swap("#sidebar");
+  swap("#rail");
+  swap("#breadcrumbs");
+  if (doc.title) document.title = doc.title;
+  attachDocFeatures();
+}
+
+// ---------- live reload via hot-swap (file-change driven) ----------
 function connectWs() {
   const ws = new WebSocket(`ws://${location.host}/_ws`);
   let retry = 0;
@@ -10,20 +29,7 @@ function connectWs() {
     try { data = JSON.parse(e.data); } catch { return; }
     if (data.type === "reload") {
       try {
-        const res = await fetch(location.pathname, { cache: "no-store" });
-        if (!res.ok) return;
-        const html = await res.text();
-        const doc = new DOMParser().parseFromString(html, "text/html");
-        const swap = (sel) => {
-          const fresh = doc.querySelector(sel);
-          const live = document.querySelector(sel);
-          if (fresh && live) live.innerHTML = fresh.innerHTML;
-        };
-        swap("#content");
-        swap("#sidebar");
-        swap("#rail");
-        swap("#breadcrumbs");
-        attachDocFeatures();
+        await swapTo(location.pathname + location.search, { cache: "no-store" });
       } catch (err) {
         console.error("[md-server] reload failed", err);
       }
@@ -36,6 +42,55 @@ function connectWs() {
   ws.onerror = () => ws.close();
 }
 connectWs();
+
+// ---------- client-side navigation (no-flicker link clicks) ----------
+function shouldInterceptLink(a, e) {
+  if (!a) return false;
+  if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return false;
+  if (e.button !== undefined && e.button !== 0) return false;
+  if (a.target && a.target !== "" && a.target !== "_self") return false;
+  if (a.hasAttribute("download")) return false;
+  const href = a.getAttribute("href");
+  if (!href) return false;
+  // same-origin check
+  let url;
+  try { url = new URL(href, location.href); } catch { return false; }
+  if (url.origin !== location.origin) return false;
+  // skip server-internal routes
+  if (url.pathname.startsWith("/_")) return false;
+  // skip same-page anchor jumps (let the browser handle #section scrolling)
+  if (url.pathname === location.pathname && url.hash) return false;
+  return true;
+}
+
+async function navigateTo(url, { push = true } = {}) {
+  try {
+    await swapTo(url.pathname + url.search);
+    if (push) history.pushState({}, "", url.pathname + url.search + url.hash);
+    if (url.hash) {
+      const el = document.querySelector(url.hash);
+      if (el) el.scrollIntoView({ block: "start" });
+      else window.scrollTo(0, 0);
+    } else {
+      window.scrollTo(0, 0);
+    }
+  } catch (err) {
+    console.error("[md-server] nav failed, falling back to full load:", err);
+    location.href = url.toString();
+  }
+}
+
+document.addEventListener("click", (e) => {
+  const a = e.target.closest("a[href]");
+  if (!shouldInterceptLink(a, e)) return;
+  const url = new URL(a.getAttribute("href"), location.href);
+  e.preventDefault();
+  navigateTo(url);
+});
+
+window.addEventListener("popstate", () => {
+  navigateTo(new URL(location.href), { push: false });
+});
 
 // ---------- code block copy buttons ----------
 function attachCopyButtons() {
@@ -73,6 +128,38 @@ function attachAnchorClicks() {
   });
 }
 
+function scrollRailToActive() {
+  const rail = document.getElementById("rail");
+  if (!rail) return;
+  const active = rail.querySelector(".toc a.active");
+  if (!active) return;
+  // only bother if rail actually overflows
+  if (rail.scrollHeight <= rail.clientHeight + 2) return;
+  const railRect = rail.getBoundingClientRect();
+  const activeRect = active.getBoundingClientRect();
+  const relTop = activeRect.top - railRect.top + rail.scrollTop;
+  const target = relTop - railRect.height / 2 + activeRect.height / 2;
+  const maxScroll = rail.scrollHeight - rail.clientHeight;
+  rail.scrollTo({
+    top: Math.max(0, Math.min(maxScroll, target)),
+    behavior: "smooth",
+  });
+}
+
+function updateRailFade() {
+  const rail = document.getElementById("rail");
+  if (!rail) return;
+  const overflows = rail.scrollHeight > rail.clientHeight + 2;
+  if (!overflows) {
+    rail.classList.remove("has-more-above", "has-more-below");
+    return;
+  }
+  const atTop = rail.scrollTop <= 1;
+  const atBottom = rail.scrollTop + rail.clientHeight >= rail.scrollHeight - 1;
+  rail.classList.toggle("has-more-above", !atTop);
+  rail.classList.toggle("has-more-below", !atBottom);
+}
+
 let spyObserver = null;
 function attachScrollSpy() {
   if (spyObserver) spyObserver.disconnect();
@@ -82,21 +169,41 @@ function attachScrollSpy() {
     const href = a.getAttribute("href");
     if (href && href.startsWith("#")) tocLinks.set(href.slice(1), a);
   });
-  if (headings.length === 0 || tocLinks.size === 0) return;
+  if (headings.length === 0 || tocLinks.size === 0) {
+    updateRailFade();
+    return;
+  }
+  let lastActive = null;
   spyObserver = new IntersectionObserver(
     (entries) => {
       entries.forEach((entry) => {
         if (entry.isIntersecting) {
           tocLinks.forEach((a) => a.classList.remove("active"));
           const a = tocLinks.get(entry.target.id);
-          if (a) a.classList.add("active");
+          if (a) {
+            a.classList.add("active");
+            if (a !== lastActive) {
+              lastActive = a;
+              scrollRailToActive();
+            }
+          }
         }
       });
     },
     { rootMargin: "-10% 0px -75% 0px", threshold: 0 },
   );
   headings.forEach((h) => spyObserver.observe(h));
+  updateRailFade();
 }
+
+// one-time bindings for rail scroll state — the #rail element persists through
+// hot-swap reloads (only its innerHTML is replaced), so a single listener is enough
+(function attachRailScrollListener() {
+  const rail = document.getElementById("rail");
+  if (!rail) return;
+  rail.addEventListener("scroll", updateRailFade, { passive: true });
+  window.addEventListener("resize", updateRailFade);
+})();
 
 // ---------- sidebar collapsibles (persisted across navigation) ----------
 const FOLDER_STATE_KEY = "md-sidebar-folders";
@@ -274,7 +381,7 @@ input?.addEventListener("keydown", (e) => {
   } else if (e.key === "Enter") {
     e.preventDefault();
     const r = results[selectedIdx];
-    if (r) location.href = "/" + r.item.path;
+    if (r) { closeSearch(); navigateTo(new URL("/" + r.item.path, location.href)); }
   } else if (e.key === "Escape") {
     closeSearch();
   }
@@ -289,7 +396,7 @@ function render() {
   `).join("");
   resultsEl.querySelectorAll("li").forEach((el, i) => {
     el.addEventListener("mouseenter", () => { selectedIdx = i; render(); });
-    el.addEventListener("click", () => { location.href = "/" + el.dataset.path; });
+    el.addEventListener("click", () => { closeSearch(); navigateTo(new URL("/" + el.dataset.path, location.href)); });
   });
 }
 function escapeHtml(s) {
@@ -450,6 +557,7 @@ function attachDocFeatures() {
   attachAnchorClicks();
   attachScrollSpy();
   applyFolderState();
+  updateRailFade();
 }
 attachToolbar();
 attachResizer();
