@@ -44,9 +44,12 @@ type CacheEntry = { mtimeMs: number; contentHtml: string; tocHtml: string; title
 const pageCache = new Map<string, CacheEntry>();
 const sockets = new Set<ServerWebSocket<unknown>>();
 
-let searchIndexCache: { mtimeMs: number; json: string } | null = null;
+let searchIndexCache: { mtimeMs: number; count: number; json: string } | null = null;
 
-async function resolveSafe(reqPath: string): Promise<string | null> {
+async function resolveSafe(
+  reqPath: string,
+  { allowHomeSymlink = false }: { allowHomeSymlink?: boolean } = {},
+): Promise<string | null> {
   const decoded = decodeURIComponent(reqPath);
   const cleaned = decoded.replace(/^\/+/, "");
   const literal = path.resolve(DOC_ROOT, cleaned);
@@ -57,11 +60,11 @@ async function resolveSafe(reqPath: string): Promise<string | null> {
   }
   try {
     const real = await fs.realpath(literal);
-    // after symlink resolution, allow the real path to be inside DOC_ROOT, OR
-    // inside $HOME — so users can symlink external notes into their doc tree
-    // without the reader blocking them. Binding to 127.0.0.1 keeps this local.
     const underDocRoot = real === REAL_ROOT || real.startsWith(REAL_ROOT + path.sep);
-    const underHome = REAL_HOME
+    // $HOME relaxation is only extended to the main rendered-markdown route.
+    // /_raw/ and static pass-through keep the strict DOC_ROOT-only check so a
+    // symlink-escape to ~/.ssh/id_rsa etc. can't be served as text/plain.
+    const underHome = allowHomeSymlink && REAL_HOME
       ? (real === REAL_HOME || real.startsWith(REAL_HOME + path.sep))
       : false;
     if (!underDocRoot && !underHome) return null;
@@ -86,6 +89,7 @@ async function renderMarkdownFile(absPath: string, relPath: string): Promise<{ p
 
   let entry = pageCache.get(relPath);
   if (!entry || entry.mtimeMs !== stat.mtimeMs) {
+    const mtimeAtRead = stat.mtimeMs;
     const raw = await fs.readFile(absPath, "utf8");
     if (/\0/.test(raw.slice(0, 1024))) {
       return await wrapPage(relPath, `<p class="warning">Binary file — not rendered.</p>`);
@@ -95,12 +99,21 @@ async function renderMarkdownFile(absPath: string, relPath: string): Promise<{ p
     const toc = extractToc(html);
     const title = extractTitle(raw) || relPath.replace(/\.md$/, "") || "handbook";
     entry = {
-      mtimeMs: stat.mtimeMs,
+      mtimeMs: mtimeAtRead,
       contentHtml: html,
       tocHtml: renderToc(toc),
       title,
     };
-    pageCache.set(relPath, entry);
+    // only write to cache if mtime hasn't changed since we read — otherwise a
+    // concurrent file-change + onFileChange delete could leave us caching stale
+    // content past the invalidation signal.
+    let postStat;
+    try { postStat = await fs.stat(absPath); } catch { postStat = null; }
+    if (postStat && postStat.mtimeMs === mtimeAtRead) {
+      pageCache.set(relPath, entry);
+    } else {
+      pageCache.delete(relPath);
+    }
   }
 
   const tree = await buildTree(DOC_ROOT);
@@ -170,16 +183,23 @@ async function renderDirIndex(absDir: string, relDir: string): Promise<{ page: s
 }
 
 async function buildSearchIndex(): Promise<string> {
-  const latestMtime = await walkLatestMtime(DOC_ROOT);
-  if (searchIndexCache && searchIndexCache.mtimeMs === latestMtime) {
+  // include file count in cache key — mtime-max alone doesn't invalidate on delete
+  const { latest, count } = await walkMarkdownStats(DOC_ROOT);
+  if (searchIndexCache && searchIndexCache.mtimeMs === latest && searchIndexCache.count === count) {
     return searchIndexCache.json;
   }
   const docs: { title: string; path: string; excerpt: string }[] = [];
+  const visited = new Set<string>();
   async function walk(dir: string, rel: string) {
-    const entries = await fs.readdir(dir, { withFileTypes: true });
+    let realDir: string;
+    try { realDir = await fs.realpath(dir); } catch { return; }
+    if (visited.has(realDir)) return;
+    visited.add(realDir);
+    let entries;
+    try { entries = await fs.readdir(dir, { withFileTypes: true }); } catch { return; }
     for (const e of entries) {
       if (e.name.startsWith(".")) continue;
-      if (["node_modules", ".git", ".obsidian"].includes(e.name)) continue;
+      if (["node_modules", ".git", ".obsidian", ".vscode"].includes(e.name)) continue;
       const abs = path.join(dir, e.name);
       const r = path.posix.join(rel, e.name);
       if (e.isDirectory()) await walk(abs, r);
@@ -195,27 +215,37 @@ async function buildSearchIndex(): Promise<string> {
   }
   await walk(DOC_ROOT, "");
   const json = JSON.stringify(docs);
-  searchIndexCache = { mtimeMs: latestMtime, json };
+  searchIndexCache = { mtimeMs: latest, count, json };
   return json;
 }
 
-async function walkLatestMtime(root: string): Promise<number> {
+async function walkMarkdownStats(root: string): Promise<{ latest: number; count: number }> {
   let latest = 0;
+  let count = 0;
+  const visited = new Set<string>();
   async function walk(dir: string) {
-    const entries = await fs.readdir(dir, { withFileTypes: true });
+    let realDir: string;
+    try { realDir = await fs.realpath(dir); } catch { return; }
+    if (visited.has(realDir)) return;
+    visited.add(realDir);
+    let entries;
+    try { entries = await fs.readdir(dir, { withFileTypes: true }); } catch { return; }
     for (const e of entries) {
       if (e.name.startsWith(".")) continue;
-      if (["node_modules", ".git"].includes(e.name)) continue;
+      if (["node_modules", ".git", ".obsidian", ".vscode"].includes(e.name)) continue;
       const abs = path.join(dir, e.name);
       if (e.isDirectory()) await walk(abs);
       else if (e.isFile() && e.name.endsWith(".md")) {
-        const s = await fs.stat(abs);
-        if (s.mtimeMs > latest) latest = s.mtimeMs;
+        try {
+          const s = await fs.stat(abs);
+          if (s.mtimeMs > latest) latest = s.mtimeMs;
+          count++;
+        } catch {}
       }
     }
   }
   await walk(root);
-  return latest;
+  return { latest, count };
 }
 
 function mimeFor(p: string): string {
@@ -250,8 +280,13 @@ function onFileChange(filename: string | null) {
     }
     pendingPaths.clear();
     searchIndexCache = null;
-    for (const ws of sockets) {
-      try { ws.send(JSON.stringify({ type: "reload" })); } catch {}
+    // broadcast only to open sockets; GC closed/closing ones in the same pass
+    for (const ws of [...sockets]) {
+      if (ws.readyState !== 1 /* OPEN */) {
+        sockets.delete(ws);
+        continue;
+      }
+      try { ws.send(JSON.stringify({ type: "reload" })); } catch { sockets.delete(ws); }
     }
   }, 50);
 }
@@ -340,9 +375,13 @@ const server = Bun.serve({
       });
     }
 
-    if (pathname === "/") pathname = "/";
+    // try $HOME-relaxed resolution first — for markdown pages and directories,
+    // symlinks may resolve anywhere under $HOME. For non-markdown static files,
+    // we fall through and re-resolve strictly (DOC_ROOT only) below.
+    const absLax = await resolveSafe(pathname, { allowHomeSymlink: true });
+    const absStrict = absLax ? await resolveSafe(pathname) : null;
 
-    const abs = await resolveSafe(pathname);
+    const abs = absLax;
     if (!abs) return await renderErrorPage(404, "Not found");
 
     let stat;
@@ -368,11 +407,31 @@ const server = Bun.serve({
       });
     }
 
-    const data = await fs.readFile(abs);
+    // non-markdown static:
+    //   - strict DOC_ROOT paths: full browser caching, original mime type
+    //   - $HOME-symlinked paths: only known doc-asset mimes AND downgrade any
+    //     mime that could execute scripts in our origin (js, svg, html) to
+    //     text/plain, with no caching. This blocks the XSS-adjacent case where
+    //     a user's symlinked tree contains a crafted .svg that runs inline
+    //     script on 127.0.0.1:4321.
+    const mime = mimeFor(abs);
+    const isKnownAsset = mime !== "application/octet-stream";
+    const servedFromHome = !absStrict && isKnownAsset;
+    const staticAbs = absStrict || (servedFromHome ? abs : null);
+    if (!staticAbs) return await renderErrorPage(404, "Not found");
+    const executableMime = new Set([
+      "application/javascript; charset=utf-8",
+      "image/svg+xml",
+      "text/html",
+      "text/html; charset=utf-8",
+    ]);
+    const effectiveMime = servedFromHome && executableMime.has(mime) ? "text/plain; charset=utf-8" : mime;
+    const effectiveCache = servedFromHome ? "no-cache" : "public, max-age=3600";
+    const data = await fs.readFile(staticAbs);
     return new Response(data, {
       headers: {
-        "content-type": mimeFor(abs),
-        "cache-control": "public, max-age=3600",
+        "content-type": effectiveMime,
+        "cache-control": effectiveCache,
       },
     });
   },

@@ -19,11 +19,12 @@
   --bg-code: #f4f1ea;
   --text: #1a1815;
   --text-dim: #6b655a;
-  --text-faint: #9a9286;
+  --text-faint: #857e70;
   --rule: #e8e3d8;
   --accent: #b5502b;
   --accent-soft: #e8d5c7;
   --selection: #f4d9c4;
+  --focus-ring: #b5502b;
 
   --font-serif: Charter, "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
   --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif;
@@ -43,8 +44,8 @@
     --bg-sunk: #1e1c1a;
     --bg-code: #1e1c1a;
     --text: #ecebe7;
-    --text-dim: #9a948a;
-    --text-faint: #6b655a;
+    --text-dim: #b0a99e;
+    --text-faint: #8a8477;
     --rule: #2c2925;
     --accent: #e89566;
     --accent-soft: #3d2a1e;
@@ -119,12 +120,13 @@ body.resizing * {
   height: 36px;
   border-radius: 1px;
   background: var(--text-faint);
-  opacity: 0;
+  opacity: 0.22;
   transition: opacity 0.12s ease;
 }
 .resizer:hover::after,
+.resizer:focus-visible::after,
 .resizer.resizing::after {
-  opacity: 0.5;
+  opacity: 0.7;
 }
 
 /* ---------- tooltip (sidebar hover preview) ---------- */
@@ -151,6 +153,54 @@ body.resizing * {
   .tooltip {
     box-shadow: 0 6px 20px rgba(0, 0, 0, 0.5);
   }
+}
+
+/* ---------- visually hidden but announced by assistive tech ---------- */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* ---------- skip-to-content (keyboard only) ---------- */
+.skip-link {
+  position: fixed;
+  top: 8px;
+  left: 8px;
+  z-index: 200;
+  padding: 8px 14px;
+  background: var(--bg);
+  border: 1.5px solid var(--accent);
+  border-radius: 6px;
+  color: var(--accent);
+  font-family: var(--font-sans);
+  font-size: 13px;
+  text-decoration: none;
+  transform: translateY(-150%);
+  transition: transform 0.15s ease;
+}
+.skip-link:focus {
+  transform: translateY(0);
+  outline: none;
+}
+
+.content:focus-visible { outline: none; }
+
+/* ---------- respect prefers-reduced-motion ---------- */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+  }
+  .tool-btn:active { transform: none; }
 }
 
 /* ---------- sidebar ---------- */
@@ -244,6 +294,12 @@ body.resizing * {
 }
 .tree .file a:hover,
 .tree .dir-toggle:hover { color: var(--text); }
+.tree .file a:focus-visible,
+.tree .dir-toggle:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: -1px;
+  border-radius: 3px;
+}
 
 .tree .file.active a {
   color: var(--accent);
@@ -350,6 +406,10 @@ body.resizing * {
 .tool-btn:active {
   transform: scale(0.94);
 }
+.tool-btn:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
 .tool-btn.success {
   color: var(--accent);
   background: var(--accent-soft);
@@ -405,6 +465,58 @@ body.resizing * {
 
 .content ul, .content ol { padding-left: 1.5em; margin: 0 0 1.2em; }
 .content li { margin: 0.3em 0; }
+
+/* ---------- GFM task lists ---------- */
+.content ul.contains-task-list,
+.content ul .contains-task-list {
+  list-style: none;
+  padding-left: 0.25em;
+}
+.content li.task-list-item {
+  position: relative;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 0.7em;
+  padding-left: 0;
+  margin: 0.4em 0;
+}
+.content li.task-list-item::marker { content: ""; }
+.content li.task-list-item > input[type="checkbox"] {
+  -webkit-appearance: none;
+  appearance: none;
+  flex-shrink: 0;
+  width: 1.05em;
+  height: 1.05em;
+  margin-top: 0.3em; /* aligns optical center with first line of flex-start text */
+  border: 1.5px solid var(--rule);
+  border-radius: 4px;
+  background: var(--bg);
+  cursor: default;
+  transition: border-color 0.12s ease, background-color 0.12s ease;
+}
+.content li.task-list-item > input[type="checkbox"]:checked {
+  border-color: var(--accent);
+  background-color: var(--accent);
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='%23fbfaf7' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'><polyline points='3.5 8.5 6.8 11.6 12.5 5'/></svg>");
+  background-size: 72% 72%;
+  background-repeat: no-repeat;
+  background-position: center;
+}
+@media (prefers-color-scheme: dark) {
+  .content li.task-list-item > input[type="checkbox"]:checked {
+    background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='%23161514' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'><polyline points='3.5 8.5 6.8 11.6 12.5 5'/></svg>");
+  }
+}
+.content li.task-list-item > input[type="checkbox"]:checked + * {
+  color: var(--text-dim);
+}
+/* nested task lists keep the same indentation rhythm as regular lists */
+.content li.task-list-item ul.contains-task-list {
+  margin: 0.3em 0 0.3em 0;
+  padding-left: 1.5em;
+  flex-basis: 100%;
+}
 
 .content blockquote {
   margin: 1.2em 0;
@@ -642,6 +754,7 @@ body.resizing * {
   outline: none;
   border-bottom: 1px solid var(--rule);
 }
+#search-input:focus-visible { outline: none; }
 #search-results {
   list-style: none;
   margin: 0;
@@ -677,3 +790,15 @@ body.resizing * {
   overflow: hidden;
   text-overflow: ellipsis;
 }
+#search-results li.r-loading {
+  padding: 14px 22px;
+  color: var(--text-faint);
+  font-size: 13px;
+  font-style: italic;
+  cursor: default;
+}
+#search-results li.r-loading.r-error {
+  color: var(--accent);
+  font-style: normal;
+}
+#search-results li.r-loading:hover { background: none; border-left-color: transparent; }

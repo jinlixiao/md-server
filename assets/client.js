@@ -2,10 +2,20 @@
 import Fuse from "https://esm.sh/fuse.js@7.0.0";
 
 // ---------- shared DOM swap (used by both WebSocket hot-reload and client nav) ----------
+let swapToken = 0;
+let currentAbort = null;
 async function swapTo(url, { cache = "default" } = {}) {
-  const res = await fetch(url, { cache });
+  // only the latest-issued swap wins — earlier in-flight fetches are aborted
+  // and their results (even if they arrive) are discarded. Prevents a
+  // WebSocket reload + link click from racing and painting mixed state.
+  const myToken = ++swapToken;
+  if (currentAbort) currentAbort.abort();
+  currentAbort = new AbortController();
+  const res = await fetch(url, { cache, signal: currentAbort.signal });
+  if (myToken !== swapToken) throw new Error("superseded");
   if (!res.ok) throw new Error(`fetch ${url}: ${res.status}`);
   const html = await res.text();
+  if (myToken !== swapToken) throw new Error("superseded");
   const doc = new DOMParser().parseFromString(html, "text/html");
   const swap = (sel) => {
     const fresh = doc.querySelector(sel);
@@ -63,18 +73,32 @@ function shouldInterceptLink(a, e) {
   return true;
 }
 
+const reducedMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)");
+function prefersReducedMotion() { return !!(reducedMotion && reducedMotion.matches); }
+
 async function navigateTo(url, { push = true } = {}) {
+  const fromPopstate = !push;
   try {
     await swapTo(url.pathname + url.search);
     if (push) history.pushState({}, "", url.pathname + url.search + url.hash);
+    const smooth = !prefersReducedMotion();
     if (url.hash) {
       const el = document.querySelector(url.hash);
-      if (el) el.scrollIntoView({ block: "start" });
-      else window.scrollTo(0, 0);
+      if (el) el.scrollIntoView({ block: "start", behavior: smooth ? "smooth" : "auto" });
+      else window.scrollTo({ top: 0, behavior: smooth ? "smooth" : "auto" });
     } else {
-      window.scrollTo(0, 0);
+      window.scrollTo({ top: 0, behavior: smooth ? "smooth" : "auto" });
     }
   } catch (err) {
+    const superseded = err && (err.message === "superseded" || err.name === "AbortError");
+    if (superseded && fromPopstate) {
+      // popstate already mutated location.pathname. If our swap was cancelled,
+      // the DOM no longer matches the URL — force a full reload to re-sync
+      // rather than leaving the user on a mismatched page.
+      location.reload();
+      return;
+    }
+    if (superseded) return;
     console.error("[md-server] nav failed, falling back to full load:", err);
     location.href = url.toString();
   }
@@ -93,6 +117,31 @@ window.addEventListener("popstate", () => {
 });
 
 // ---------- code block copy buttons ----------
+function getCopyStatus() {
+  let live = document.getElementById("copy-status");
+  if (!live) {
+    live = document.createElement("div");
+    live.id = "copy-status";
+    live.setAttribute("role", "status");
+    live.setAttribute("aria-live", "polite");
+    live.className = "sr-only";
+    document.body.appendChild(live);
+  }
+  return live;
+}
+let copyAnnounceTimer = null;
+function announceCopied(label) {
+  const text = label || "Copied to clipboard";
+  const live = getCopyStatus();
+  // rapid repeat clicks shouldn't stutter ("Code copied, Code copied, ...") —
+  // coalesce and only re-announce if the content actually differs
+  if (copyAnnounceTimer) clearTimeout(copyAnnounceTimer);
+  live.textContent = "";
+  copyAnnounceTimer = setTimeout(() => {
+    live.textContent = text;
+    copyAnnounceTimer = null;
+  }, 10);
+}
 function attachCopyButtons() {
   document.querySelectorAll(".content pre").forEach((pre) => {
     if (pre.querySelector(".copy-btn")) return;
@@ -100,6 +149,7 @@ function attachCopyButtons() {
     btn.className = "copy-btn";
     btn.type = "button";
     btn.textContent = "Copy";
+    btn.setAttribute("aria-label", "Copy code to clipboard");
     btn.addEventListener("click", async () => {
       const code = pre.querySelector("code");
       const text = code ? code.innerText : pre.innerText;
@@ -107,6 +157,7 @@ function attachCopyButtons() {
         await navigator.clipboard.writeText(text);
         btn.textContent = "Copied";
         btn.classList.add("copied");
+        announceCopied("Code copied");
         setTimeout(() => {
           btn.textContent = "Copy";
           btn.classList.remove("copied");
@@ -114,17 +165,6 @@ function attachCopyButtons() {
       } catch {}
     });
     pre.appendChild(btn);
-  });
-}
-
-// ---------- anchor link hash sync + scroll-spy ----------
-function attachAnchorClicks() {
-  document.querySelectorAll(".content .anchor").forEach((a) => {
-    a.addEventListener("click", (e) => {
-      const href = a.getAttribute("href");
-      if (!href) return;
-      try { navigator.clipboard.writeText(location.origin + location.pathname + href); } catch {}
-    });
   });
 }
 
@@ -142,7 +182,7 @@ function scrollRailToActive() {
   const maxScroll = rail.scrollHeight - rail.clientHeight;
   rail.scrollTo({
     top: Math.max(0, Math.min(maxScroll, target)),
-    behavior: "smooth",
+    behavior: prefersReducedMotion() ? "auto" : "smooth",
   });
 }
 
@@ -173,7 +213,7 @@ function attachScrollSpy() {
     updateRailFade();
     return;
   }
-  let lastActive = null;
+  let lastActive = null; // reset on every rebind so scroll-to-active fires on first intersection after a swap
   spyObserver = new IntersectionObserver(
     (entries) => {
       entries.forEach((entry) => {
@@ -210,8 +250,10 @@ const FOLDER_STATE_KEY = "md-sidebar-folders";
 
 function loadFolderState() {
   try {
-    return JSON.parse(localStorage.getItem(FOLDER_STATE_KEY) || "{}") || {};
+    const raw = localStorage.getItem(FOLDER_STATE_KEY);
+    return JSON.parse(raw || "{}") || {};
   } catch {
+    // localStorage may throw on access in private/sandboxed modes — fall back to empty
     return {};
   }
 }
@@ -226,14 +268,24 @@ function folderPathFromLi(li) {
 
 function applyFolderState() {
   const state = loadFolderState();
+  const liveKeys = new Set();
   document.querySelectorAll(".tree li.dir").forEach((li) => {
     const p = folderPathFromLi(li);
     if (!p) return;
+    liveKeys.add(p);
     const pref = state[p];
     if (pref === "open") li.setAttribute("data-open", "");
     else if (pref === "closed") li.removeAttribute("data-open");
-    // no preference → trust server's data-open (auto-expand along active path)
+    // reflect aria-expanded on the toggle for screen readers
+    const btn = li.querySelector(":scope > .dir-toggle");
+    if (btn) btn.setAttribute("aria-expanded", li.hasAttribute("data-open") ? "true" : "false");
   });
+  // prune entries for folders that no longer exist in the current tree
+  let changed = false;
+  for (const k of Object.keys(state)) {
+    if (!liveKeys.has(k)) { delete state[k]; changed = true; }
+  }
+  if (changed) saveFolderState(state);
 }
 
 // event delegation on document — one listener, survives hot-swap reloads
@@ -246,6 +298,7 @@ document.addEventListener("click", (e) => {
   const isOpen = li.hasAttribute("data-open");
   if (isOpen) li.removeAttribute("data-open");
   else li.setAttribute("data-open", "");
+  btn.setAttribute("aria-expanded", isOpen ? "false" : "true");
   const p = folderPathFromLi(li);
   if (p) {
     const state = loadFolderState();
@@ -265,11 +318,12 @@ function currentFileIndex() {
 }
 
 document.addEventListener("keydown", (e) => {
-  if (e.target.tagName === "INPUT" || e.target.tagName === "TEXTAREA") {
+  const tag = e.target.tagName;
+  if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || e.target.isContentEditable) {
     if (e.key === "Escape") closeSearch();
     return;
   }
-  if (e.metaKey && e.key === "k") {
+  if ((e.metaKey || e.ctrlKey) && e.key === "k") {
     e.preventDefault();
     openSearch();
     return;
@@ -279,18 +333,17 @@ document.addEventListener("keydown", (e) => {
     openSearch();
     return;
   }
-  if (e.key === "j") {
+  if (e.key === "j" || e.key === "k") {
     const files = sidebarFiles();
     const i = currentFileIndex();
-    const next = files[Math.min(files.length - 1, (i < 0 ? 0 : i + 1))];
-    if (next) next.click();
-    return;
-  }
-  if (e.key === "k") {
-    const files = sidebarFiles();
-    const i = currentFileIndex();
-    const prev = files[Math.max(0, (i < 0 ? 0 : i - 1))];
-    if (prev) prev.click();
+    // no-op on pages without an active sidebar file (404, empty dir, etc.) —
+    // otherwise pressing k silently jumps to the first doc, which feels like
+    // accidental data loss when you're oriented on a 404 page.
+    if (i < 0) return;
+    const target = e.key === "j"
+      ? files[Math.min(files.length - 1, i + 1)]
+      : files[Math.max(0, i - 1)];
+    if (target) target.click();
     return;
   }
   if (e.key === "g") {
@@ -319,38 +372,91 @@ const resultsEl = document.getElementById("search-results");
 const trigger = document.getElementById("search-trigger");
 if (trigger) trigger.addEventListener("click", openSearch);
 
+let fuseLoading = null;
 async function ensureFuse() {
   if (fuse) return fuse;
-  const res = await fetch("/_search/index.json");
-  const docs = await res.json();
-  fuse = new Fuse(docs, {
-    keys: [
-      { name: "title", weight: 0.6 },
-      { name: "path", weight: 0.3 },
-      { name: "excerpt", weight: 0.1 },
-    ],
-    threshold: 0.35,
-    ignoreLocation: true,
-  });
-  return fuse;
+  if (fuseLoading) return fuseLoading;
+  fuseLoading = (async () => {
+    try {
+      const res = await fetch("/_search/index.json");
+      if (!res.ok) throw new Error("search index " + res.status);
+      const docs = await res.json();
+      fuse = new Fuse(docs, {
+        keys: [
+          { name: "title", weight: 0.6 },
+          { name: "path", weight: 0.3 },
+          { name: "excerpt", weight: 0.1 },
+        ],
+        threshold: 0.35,
+        ignoreLocation: true,
+      });
+      return fuse;
+    } catch (err) {
+      console.error("[md-server] search index load failed:", err);
+      fuseLoading = null; // allow retry on next open
+      throw err;
+    }
+  })();
+  return fuseLoading;
 }
 
+let searchReturnFocus = null;
 async function openSearch() {
-  await ensureFuse();
+  // show the palette immediately — load fuse in the background. On slow CDN /
+  // offline, the palette still opens and search reports a friendly state.
+  searchReturnFocus = document.activeElement;
   palette.hidden = false;
   input.value = "";
-  resultsEl.innerHTML = "";
+  resultsEl.innerHTML = '<li class="r-loading" role="status" aria-live="polite">Loading search…</li>';
   input.focus();
+  try {
+    await ensureFuse();
+    resultsEl.innerHTML = "";
+  } catch {
+    resultsEl.innerHTML = '<li class="r-loading r-error" role="status" aria-live="polite">Search unavailable (offline?)</li>';
+  }
 }
 function closeSearch() {
+  if (palette.hidden) return;
   palette.hidden = true;
+  // restore focus to whatever opened the palette (trigger button, sidebar link, etc.)
+  if (searchReturnFocus && typeof searchReturnFocus.focus === "function") {
+    try { searchReturnFocus.focus(); } catch {}
+  }
+  searchReturnFocus = null;
 }
+
+// simple focus trap while the palette is open — keeps Tab / Shift+Tab inside.
+// Also recovers if focus ever escapes (devtools pulled it away, etc.).
+palette?.addEventListener("keydown", (e) => {
+  if (palette.hidden) return;
+  if (e.key !== "Tab") return;
+  const focusables = palette.querySelectorAll('input, button, [href], [tabindex]:not([tabindex="-1"])');
+  if (focusables.length === 0) return;
+  const first = focusables[0];
+  const last = focusables[focusables.length - 1];
+  const active = document.activeElement;
+  // if focus has escaped the palette, pull it back to the input
+  if (!palette.contains(active)) {
+    e.preventDefault();
+    input.focus();
+    return;
+  }
+  if (e.shiftKey && active === first) {
+    e.preventDefault();
+    last.focus();
+  } else if (!e.shiftKey && active === last) {
+    e.preventDefault();
+    first.focus();
+  }
+});
 palette?.addEventListener("click", (e) => {
   if (e.target === palette) closeSearch();
 });
 input?.addEventListener("input", () => {
   const q = input.value.trim();
   if (!q) { resultsEl.innerHTML = ""; return; }
+  if (!fuse) { resultsEl.innerHTML = '<li class="r-loading r-error">Search unavailable</li>'; return; }
   results = fuse.search(q).slice(0, 12);
   selectedIdx = 0;
   render();
@@ -374,12 +480,18 @@ input?.addEventListener("keydown", (e) => {
 });
 function render() {
   resultsEl.innerHTML = results.map((r, i) => `
-    <li class="${i === selectedIdx ? "selected" : ""}" data-path="${r.item.path}">
+    <li class="${i === selectedIdx ? "selected" : ""}" role="option" id="r-option-${i}" aria-selected="${i === selectedIdx ? "true" : "false"}" data-path="${r.item.path}">
       <div class="r-title">${escapeHtml(r.item.title)}</div>
       <div class="r-path">${escapeHtml(r.item.path)}</div>
       <div class="r-excerpt">${escapeHtml(r.item.excerpt)}</div>
     </li>
   `).join("");
+  // keep input's aria-activedescendant pointing at the selected option so
+  // screen readers announce which result is focused as user arrows
+  if (input) {
+    if (results.length > 0) input.setAttribute("aria-activedescendant", "r-option-" + selectedIdx);
+    else input.removeAttribute("aria-activedescendant");
+  }
   resultsEl.querySelectorAll("li").forEach((el, i) => {
     el.addEventListener("mouseenter", () => { selectedIdx = i; render(); });
     el.addEventListener("click", () => { closeSearch(); navigateTo(new URL("/" + el.dataset.path, location.href)); });
@@ -401,6 +513,7 @@ function attachToolbar() {
         const text = await res.text();
         await navigator.clipboard.writeText(text);
         copyBtn.classList.add("success");
+        announceCopied("Markdown copied");
         setTimeout(() => copyBtn.classList.remove("success"), 1400);
       } catch (err) {
         console.error("[md-server] copy-md failed", err);
@@ -435,6 +548,7 @@ function attachResizer() {
 
   resizer.addEventListener("pointerdown", (e) => {
     e.preventDefault();
+    const activePointerId = e.pointerId;
     const startX = e.clientX;
     const startW = parseInt(
       getComputedStyle(document.documentElement).getPropertyValue("--sidebar-w"),
@@ -442,28 +556,37 @@ function attachResizer() {
     ) || 260;
     document.body.classList.add("resizing");
     resizer.classList.add("resizing");
-    try { resizer.setPointerCapture(e.pointerId); } catch {}
+    try { resizer.setPointerCapture(activePointerId); } catch {}
 
     const onMove = (ev) => {
+      if (ev.pointerId !== activePointerId) return;
       const dx = ev.clientX - startX;
       const newW = Math.max(SIDEBAR_MIN, Math.min(SIDEBAR_MAX, startW + dx));
       applySidebarWidth(newW);
     };
-    const onUp = () => {
-      resizer.removeEventListener("pointermove", onMove);
-      resizer.removeEventListener("pointerup", onUp);
-      resizer.removeEventListener("pointercancel", onUp);
+    const onUp = (ev) => {
+      if (ev && ev.pointerId !== undefined && ev.pointerId !== activePointerId) return;
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+      window.removeEventListener("pointercancel", onUp);
+      window.removeEventListener("blur", onUp);
       document.body.classList.remove("resizing");
       resizer.classList.remove("resizing");
+      try { resizer.releasePointerCapture(activePointerId); } catch {}
       const finalW = parseInt(
         getComputedStyle(document.documentElement).getPropertyValue("--sidebar-w"),
         10,
       );
-      if (!Number.isNaN(finalW)) localStorage.setItem(SIDEBAR_STORAGE_KEY, String(finalW));
+      if (!Number.isNaN(finalW)) {
+        try { localStorage.setItem(SIDEBAR_STORAGE_KEY, String(finalW)); } catch {}
+      }
     };
-    resizer.addEventListener("pointermove", onMove);
-    resizer.addEventListener("pointerup", onUp);
-    resizer.addEventListener("pointercancel", onUp);
+    // bind on window so a fast drag that leaves the resizer still ends cleanly,
+    // even if setPointerCapture failed (which would otherwise lock the UI)
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+    window.addEventListener("pointercancel", onUp);
+    window.addEventListener("blur", onUp);
   });
 
   // keyboard-accessible: arrow keys nudge width by 20px
@@ -540,7 +663,6 @@ function attachTooltip() {
 // ---------- init ----------
 function attachDocFeatures() {
   attachCopyButtons();
-  attachAnchorClicks();
   attachScrollSpy();
   applyFolderState();
   updateRailFade();

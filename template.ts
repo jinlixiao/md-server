@@ -2,6 +2,8 @@ import path from "node:path";
 import fs from "node:fs/promises";
 import MarkdownIt from "markdown-it";
 import anchor from "markdown-it-anchor";
+// @ts-expect-error — no ambient types published for this plugin
+import taskLists from "markdown-it-task-lists";
 import { createHighlighter, type Highlighter } from "shiki";
 
 const SKIP_DIRS = new Set([".git", "node_modules", ".obsidian", ".vscode"]);
@@ -64,6 +66,7 @@ export function createMd(hl: Highlighter): MarkdownIt {
     slugify: (s: string) =>
       s.toLowerCase().trim().replace(/[^\w\s-]/g, "").replace(/\s+/g, "-"),
   });
+  md.use(taskLists, { enabled: false, label: false, labelAfter: false });
   return md;
 }
 
@@ -87,15 +90,18 @@ export function extractToc(html: string): TocItem[] {
   const re = /<h([23])[^>]*id="([^"]+)"[^>]*>([\s\S]*?)<\/h\1>/g;
   let m: RegExpExecArray | null;
   while ((m = re.exec(html)) !== null) {
-    const stripped = m[3]!
-      .replace(/<a\b[^>]*class="[^"]*\banchor\b[^"]*"[^>]*>[\s\S]*?<\/a>/g, "")
-      .replace(/<[^>]+>/g, "")
-      .trim();
+    const stripped = m[3]!.replace(/<[^>]+>/g, "").trim();
     toc.push({ level: parseInt(m[1]!, 10), text: decodeEntities(stripped), slug: m[2]! });
   }
   return toc;
 }
 
+// Regex-on-HTML is ordinarily a footgun, but markdown-it is configured with
+// html: false below, so user-authored raw HTML never reaches us — the only
+// producer of these attributes is markdown-it itself. If html: true is ever
+// enabled, this needs to become a proper DOM walker (or an ast visitor inside
+// markdown-it), because <source>, <video>, <iframe>, srcset, and attributes
+// ordered before href/src would all need handling.
 export function rewriteRelativeUrls(
   html: string,
   docRelPath: string,
@@ -118,8 +124,17 @@ export interface TreeNode {
   children: TreeNode[];
 }
 
-export async function buildTree(root: string, rel = ""): Promise<TreeNode[]> {
+export async function buildTree(
+  root: string,
+  rel = "",
+  visited: Set<string> = new Set(),
+): Promise<TreeNode[]> {
   const abs = path.join(root, rel);
+  let realAbs: string;
+  try { realAbs = await fs.realpath(abs); } catch { return []; }
+  if (visited.has(realAbs)) return []; // symlink loop guard
+  visited.add(realAbs);
+
   let entries;
   try {
     entries = await fs.readdir(abs, { withFileTypes: true });
@@ -132,7 +147,7 @@ export async function buildTree(root: string, rel = ""): Promise<TreeNode[]> {
     if (SKIP_DIRS.has(e.name)) continue;
     const childRel = path.posix.join(rel, e.name);
     if (e.isDirectory()) {
-      const children = await buildTree(root, childRel);
+      const children = await buildTree(root, childRel, visited);
       if (children.length > 0) {
         nodes.push({
           name: e.name,
@@ -161,11 +176,12 @@ export function renderSidebar(tree: TreeNode[], activePath: string): string {
   const render = (nodes: TreeNode[]): string => {
     const items = nodes.map((n) => {
       if (n.isDir) {
-        const expanded = activePath.startsWith(n.relPath + "/") ? " data-open" : "";
+        const isOpen = activePath.startsWith(n.relPath + "/");
+        const expanded = isOpen ? " data-open" : "";
         return `<li class="dir" data-path="${escapeHtml(n.relPath)}"${expanded}>
-          <button class="dir-toggle" type="button">
-            <span class="tree-caret"></span>
-            <span class="tree-icon">${ICON_FOLDER}</span>
+          <button class="dir-toggle" type="button" aria-expanded="${isOpen ? "true" : "false"}">
+            <span class="tree-caret" aria-hidden="true"></span>
+            <span class="tree-icon" aria-hidden="true">${ICON_FOLDER}</span>
             <span class="tree-name">${escapeHtml(n.name)}</span>
           </button>
           <ul>${render(n.children)}</ul>
@@ -173,9 +189,9 @@ export function renderSidebar(tree: TreeNode[], activePath: string): string {
       }
       const href = "/" + n.relPath;
       const active = activePath === n.relPath ? " active" : "";
-      return `<li class="file${active}"><a href="${href}">
-        <span class="tree-caret"></span>
-        <span class="tree-icon">${ICON_FILE}</span>
+      return `<li class="file${active}"><a href="${href}"${active ? ' aria-current="page"' : ""}>
+        <span class="tree-caret" aria-hidden="true"></span>
+        <span class="tree-icon" aria-hidden="true">${ICON_FILE}</span>
         <span class="tree-name">${escapeHtml(n.name)}</span>
       </a></li>`;
     });
@@ -231,8 +247,9 @@ export function renderPage(opts: PageOptions): string {
 <link rel="stylesheet" href="/_assets/style.css?v=${ASSET_VERSION}">
 </head>
 <body>
+<a class="skip-link" href="#content">Skip to content</a>
 <div class="app">
-  <aside class="sidebar" id="sidebar">
+  <aside class="sidebar" id="sidebar" aria-label="Documents">
     <header class="sidebar-header">
       <a href="/" class="repo-name">${escapeHtml(siteName)}</a>
       <button class="search-trigger" type="button" id="search-trigger" aria-label="Search (Cmd-K)">
@@ -256,15 +273,15 @@ export function renderPage(opts: PageOptions): string {
         </button>
       </div>
     </div>
-    <article class="content" id="content">${opts.contentHtml}</article>
+    <article class="content" id="content" tabindex="-1">${opts.contentHtml}</article>
   </main>
   <aside class="rail" id="rail">${opts.tocHtml}</aside>
 </div>
 <div class="tooltip" id="tooltip" hidden></div>
-<div class="search-palette" id="search-palette" hidden>
+<div class="search-palette" id="search-palette" role="dialog" aria-modal="true" aria-label="Search docs" hidden>
   <div class="search-box">
-    <input type="text" id="search-input" placeholder="Search docs…" autocomplete="off" spellcheck="false">
-    <ul id="search-results"></ul>
+    <input type="text" id="search-input" placeholder="Search docs…" autocomplete="off" spellcheck="false" aria-label="Search query" aria-controls="search-results" aria-autocomplete="list">
+    <ul id="search-results" role="listbox" aria-label="Search results"></ul>
   </div>
 </div>
 <script src="/_assets/client.js?v=${ASSET_VERSION}" type="module"></script>
