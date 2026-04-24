@@ -71,9 +71,9 @@ html, body {
 
 .app {
   display: grid;
-  grid-template-columns: var(--sidebar-w) 6px 1fr var(--rail-w);
+  grid-template-columns: 1fr var(--rail-w);
   min-height: 100vh;
-  max-width: 1400px;
+  max-width: 1100px;
   margin: 0 auto;
 }
 body.resizing {
@@ -86,16 +86,34 @@ body.resizing * {
 
 /* ---------- resizer (sidebar drag handle) ---------- */
 .resizer {
-  position: sticky;
+  position: fixed;
+  left: var(--sidebar-w);
   top: 0;
-  height: 100vh;
+  bottom: 0;
+  width: 6px;
   cursor: col-resize;
   display: flex;
   justify-content: center;
   align-items: stretch;
-  z-index: 5;
+  z-index: 20;
   touch-action: none;
   user-select: none;
+  transition: left 0.2s ease, opacity 0.15s ease;
+}
+.sidebar.collapsed ~ .resizer {
+  opacity: 0;
+  pointer-events: none;
+  left: 0;
+}
+
+.sidebar-toggle {
+  flex-shrink: 0;
+}
+.sidebar-toggle .tool-icon {
+  transition: transform 0.12s ease;
+}
+body.sidebar-hidden .sidebar-toggle .tool-icon {
+  transform: scaleX(-1);
 }
 .resizer::before {
   content: "";
@@ -203,17 +221,34 @@ body.resizing * {
   .tool-btn:active { transform: none; }
 }
 
-/* ---------- sidebar ---------- */
+/* ---------- sidebar (overlay panel) ---------- */
 .sidebar {
+  position: fixed;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: var(--sidebar-w);
+  z-index: 20;
+  background: var(--bg);
   border-right: 1px solid var(--rule);
   padding: 32px 18px 48px;
-  position: sticky;
-  top: 0;
-  max-height: 100vh;
   overflow-y: auto;
   font-family: var(--font-sans);
   font-size: 14px;
   line-height: 1.55;
+  transform: translateX(0);
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+  box-shadow: 4px 0 24px rgba(20, 18, 16, 0.06);
+}
+.sidebar.collapsed {
+  transform: translateX(calc(-1 * var(--sidebar-w)));
+  box-shadow: none;
+  pointer-events: none;
+}
+@media (prefers-color-scheme: dark) {
+  .sidebar:not(.collapsed) {
+    box-shadow: 4px 0 24px rgba(0, 0, 0, 0.3);
+  }
 }
 
 .sidebar-header {
@@ -361,9 +396,8 @@ body.resizing * {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  max-width: var(--content-max);
   margin-bottom: 28px;
-  gap: 16px;
+  gap: 12px;
 }
 .breadcrumbs {
   font-family: var(--font-sans);
@@ -432,8 +466,14 @@ body.resizing * {
 .tool-btn.success .tool-icon-success { display: inline-flex; }
 
 .content {
-  max-width: var(--content-max);
   color: var(--text);
+}
+/* prose elements constrained to 68ch for reading comfort;
+   code blocks + tables fill the available column width */
+.content > p, .content > h1, .content > h2, .content > h3, .content > h4,
+.content > ul, .content > ol, .content > blockquote, .content > hr,
+.content > .error-state, .content > .warning {
+  max-width: var(--content-max);
 }
 
 .content h1, .content h2, .content h3, .content h4 {

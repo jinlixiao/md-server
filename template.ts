@@ -25,6 +25,7 @@ const ICON_FILE = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" st
 const ICON_COPY = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v1"/></svg>`;
 const ICON_REFRESH = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 0 1 15.5-6.3L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-15.5 6.3L3 16"/><path d="M3 21v-5h5"/></svg>`;
 const ICON_CHECK = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>`;
+const ICON_SIDEBAR = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="9" y1="3" x2="9" y2="21"/></svg>`;
 
 let highlighter: Highlighter | null = null;
 export async function getHighlighter(): Promise<Highlighter> {
@@ -262,6 +263,9 @@ export function renderPage(opts: PageOptions): string {
   <div class="resizer" id="resizer" role="separator" aria-orientation="vertical" aria-label="Resize sidebar" tabindex="0"></div>
   <main class="content-wrap">
     <div class="doc-header">
+      <button class="tool-btn sidebar-toggle" id="sidebar-toggle" type="button" aria-label="Toggle sidebar" title="Toggle sidebar (Ctrl-\\)">
+        <span class="tool-icon">${ICON_SIDEBAR}</span>
+      </button>
       <nav class="breadcrumbs" id="breadcrumbs">${opts.breadcrumbsHtml}</nav>
       <div class="doc-toolbar" id="doc-toolbar">
         <button class="tool-btn" id="btn-copy-md" type="button" aria-label="Copy raw markdown" title="Copy raw markdown">

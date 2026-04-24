@@ -22,10 +22,14 @@ async function swapTo(url, { cache = "default" } = {}) {
     const live = document.querySelector(sel);
     if (fresh && live) live.innerHTML = fresh.innerHTML;
   };
+  // preserve sidebar scroll position across hot-swap / client nav
+  const sidebar = document.getElementById("sidebar");
+  const savedScroll = sidebar ? sidebar.scrollTop : 0;
   swap("#content");
   swap("#sidebar");
   swap("#rail");
   swap("#breadcrumbs");
+  if (sidebar) sidebar.scrollTop = savedScroll;
   if (doc.title) document.title = doc.title;
   attachDocFeatures();
 }
@@ -328,6 +332,11 @@ document.addEventListener("keydown", (e) => {
     openSearch();
     return;
   }
+  if ((e.metaKey || e.ctrlKey) && e.key === "\\") {
+    e.preventDefault();
+    document.getElementById("sidebar-toggle")?.click();
+    return;
+  }
   if (e.key === "/") {
     e.preventDefault();
     openSearch();
@@ -501,6 +510,30 @@ function escapeHtml(s) {
   return String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 }
 
+// ---------- sidebar toggle (overlay show/hide) ----------
+const SIDEBAR_COLLAPSED_KEY = "md-sidebar-collapsed";
+function attachSidebarToggle() {
+  const toggle = document.getElementById("sidebar-toggle");
+  const sidebar = document.getElementById("sidebar");
+  if (!toggle || !sidebar) return;
+
+  // restore persisted state
+  try {
+    if (localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === "1") {
+      sidebar.classList.add("collapsed");
+      document.body.classList.add("sidebar-hidden");
+    }
+  } catch {}
+
+  toggle.addEventListener("click", () => {
+    const willCollapse = !sidebar.classList.contains("collapsed");
+    sidebar.classList.toggle("collapsed", willCollapse);
+    document.body.classList.toggle("sidebar-hidden", willCollapse);
+    toggle.setAttribute("aria-label", willCollapse ? "Show sidebar" : "Hide sidebar");
+    try { localStorage.setItem(SIDEBAR_COLLAPSED_KEY, willCollapse ? "1" : "0"); } catch {}
+  });
+}
+
 // ---------- doc toolbar (once; element is not hot-swapped) ----------
 function attachToolbar() {
   const copyBtn = document.getElementById("btn-copy-md");
@@ -563,6 +596,8 @@ function attachResizer() {
       const dx = ev.clientX - startX;
       const newW = Math.max(SIDEBAR_MIN, Math.min(SIDEBAR_MAX, startW + dx));
       applySidebarWidth(newW);
+      // resizer is position:fixed — sync its left to the sidebar width
+      resizer.style.left = newW + "px";
     };
     const onUp = (ev) => {
       if (ev && ev.pointerId !== undefined && ev.pointerId !== activePointerId) return;
@@ -667,6 +702,7 @@ function attachDocFeatures() {
   applyFolderState();
   updateRailFade();
 }
+attachSidebarToggle();
 attachToolbar();
 attachResizer();
 attachTooltip();
