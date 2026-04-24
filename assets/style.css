@@ -95,7 +95,7 @@ html, body {
   content: "";
   display: block;
   width: 1px;
-  background: transparent;
+  background: var(--rule);
   transition: background 0.12s ease, width 0.08s ease;
 }
 .left-resizer:hover::before,
@@ -114,13 +114,13 @@ html, body {
   height: 36px;
   border-radius: 1px;
   background: var(--text-faint);
-  opacity: 0;
+  opacity: 0.22;
   transition: opacity 0.12s ease;
 }
 .left-resizer:hover::after,
 .left-resizer:focus-visible::after,
 .left-resizer.resizing::after {
-  opacity: 0.5;
+  opacity: 0.7;
 }
 
 /* ---------- content-resizer (content/rail drag handle) ---------- */
