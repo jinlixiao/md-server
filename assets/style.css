@@ -33,6 +33,7 @@
   --content-max: 68ch;
   --sidebar-w: 260px;
   --rail-w: 220px;
+  --content-pad-left: 56px;
 
   --fs-body: 17px;
   --lh-body: 1.65;
@@ -71,10 +72,55 @@ html, body {
 
 .app {
   display: grid;
-  grid-template-columns: 1fr 6px var(--rail-w);
+  grid-template-columns: 6px 1fr 6px var(--rail-w);
   min-height: 100vh;
   max-width: 1400px;
   margin: 0 auto;
+}
+
+/* ---------- left content resizer ---------- */
+.left-resizer {
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  cursor: col-resize;
+  display: flex;
+  justify-content: center;
+  align-items: stretch;
+  z-index: 5;
+  touch-action: none;
+  user-select: none;
+}
+.left-resizer::before {
+  content: "";
+  display: block;
+  width: 1px;
+  background: transparent;
+  transition: background 0.12s ease, width 0.08s ease;
+}
+.left-resizer:hover::before,
+.left-resizer:focus-visible::before,
+.left-resizer.resizing::before {
+  width: 3px;
+  background: var(--accent);
+}
+.left-resizer:focus-visible { outline: none; }
+.left-resizer::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 2px;
+  height: 36px;
+  border-radius: 1px;
+  background: var(--text-faint);
+  opacity: 0;
+  transition: opacity 0.12s ease;
+}
+.left-resizer:hover::after,
+.left-resizer:focus-visible::after,
+.left-resizer.resizing::after {
+  opacity: 0.5;
 }
 
 /* ---------- content-resizer (content/rail drag handle) ---------- */
@@ -433,7 +479,7 @@ body.sidebar-hidden .sidebar-toggle .tool-icon {
 
 /* ---------- content ---------- */
 .content-wrap {
-  padding: 48px 56px 96px;
+  padding: 48px 24px 96px var(--content-pad-left);
   min-width: 0;
 }
 

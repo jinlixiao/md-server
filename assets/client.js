@@ -534,6 +534,83 @@ function attachSidebarToggle() {
   });
 }
 
+// ---------- left content resizer (drag to adjust left padding) ----------
+const LEFT_PAD_STORAGE_KEY = "md-content-pad-left";
+const LEFT_PAD_MIN = 16;
+const LEFT_PAD_MAX = 300;
+
+function applyLeftPad(px) {
+  document.documentElement.style.setProperty("--content-pad-left", px + "px");
+}
+
+function attachLeftResizer() {
+  const resizer = document.getElementById("left-resizer");
+  if (!resizer) return;
+
+  try {
+    const saved = parseInt(localStorage.getItem(LEFT_PAD_STORAGE_KEY) || "", 10);
+    if (!Number.isNaN(saved) && saved >= LEFT_PAD_MIN && saved <= LEFT_PAD_MAX) {
+      applyLeftPad(saved);
+    }
+  } catch {}
+
+  resizer.addEventListener("pointerdown", (e) => {
+    e.preventDefault();
+    const activePointerId = e.pointerId;
+    const startX = e.clientX;
+    const startPad = parseInt(
+      getComputedStyle(document.documentElement).getPropertyValue("--content-pad-left"),
+      10,
+    ) || 56;
+    document.body.classList.add("resizing");
+    resizer.classList.add("resizing");
+    try { resizer.setPointerCapture(activePointerId); } catch {}
+
+    const onMove = (ev) => {
+      if (ev.pointerId !== activePointerId) return;
+      const dx = ev.clientX - startX;
+      const newPad = Math.max(LEFT_PAD_MIN, Math.min(LEFT_PAD_MAX, startPad + dx));
+      applyLeftPad(newPad);
+    };
+    const onUp = (ev) => {
+      if (ev && ev.pointerId !== undefined && ev.pointerId !== activePointerId) return;
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+      window.removeEventListener("pointercancel", onUp);
+      window.removeEventListener("blur", onUp);
+      document.body.classList.remove("resizing");
+      resizer.classList.remove("resizing");
+      try { resizer.releasePointerCapture(activePointerId); } catch {}
+      const finalPad = parseInt(
+        getComputedStyle(document.documentElement).getPropertyValue("--content-pad-left"),
+        10,
+      );
+      if (!Number.isNaN(finalPad)) {
+        try { localStorage.setItem(LEFT_PAD_STORAGE_KEY, String(finalPad)); } catch {}
+      }
+    };
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+    window.addEventListener("pointercancel", onUp);
+    window.addEventListener("blur", onUp);
+  });
+
+  resizer.addEventListener("keydown", (e) => {
+    if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
+    e.preventDefault();
+    const pad = parseInt(getComputedStyle(document.documentElement).getPropertyValue("--content-pad-left"), 10) || 56;
+    const step = e.key === "ArrowRight" ? 20 : -20;
+    const newPad = Math.max(LEFT_PAD_MIN, Math.min(LEFT_PAD_MAX, pad + step));
+    applyLeftPad(newPad);
+    try { localStorage.setItem(LEFT_PAD_STORAGE_KEY, String(newPad)); } catch {}
+  });
+
+  resizer.addEventListener("dblclick", () => {
+    document.documentElement.style.removeProperty("--content-pad-left");
+    try { localStorage.removeItem(LEFT_PAD_STORAGE_KEY); } catch {}
+  });
+}
+
 // ---------- content/rail resizer (drag to adjust rail width) ----------
 const RAIL_STORAGE_KEY = "md-rail-w";
 const RAIL_MIN = 80;
@@ -813,6 +890,7 @@ attachSidebarToggle();
 attachWidthToggle();
 attachToolbar();
 attachResizer();
+attachLeftResizer();
 attachContentResizer();
 attachTooltip();
 attachDocFeatures();

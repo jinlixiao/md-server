@@ -262,6 +262,7 @@ export function renderPage(opts: PageOptions): string {
     ${opts.sidebarHtml}
   </aside>
   <div class="resizer" id="resizer" role="separator" aria-orientation="vertical" aria-label="Resize sidebar" tabindex="0"></div>
+  <div class="left-resizer" id="left-resizer" role="separator" aria-orientation="vertical" aria-label="Resize left margin" tabindex="0"></div>
   <main class="content-wrap">
     <div class="doc-header">
       <button class="tool-btn sidebar-toggle" id="sidebar-toggle" type="button" aria-label="Toggle sidebar" title="Toggle sidebar (Ctrl-\\)">
