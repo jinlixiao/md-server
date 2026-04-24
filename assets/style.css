@@ -72,24 +72,28 @@ html, body {
 
 .app {
   display: grid;
-  grid-template-columns: 6px 1fr 6px var(--rail-w);
+  grid-template-columns: 1fr 6px var(--rail-w);
   min-height: 100vh;
   max-width: 1400px;
   margin: 0 auto;
 }
 
-/* ---------- left content resizer ---------- */
+/* ---------- left content resizer (tracks text edge, sticks while scrolling) ---------- */
 .left-resizer {
   position: sticky;
   top: 0;
   height: 100vh;
+  align-self: flex-start;
+  flex-shrink: 0;
+  width: 6px;
+  margin-left: var(--content-pad-left);
   cursor: col-resize;
-  display: flex;
-  justify-content: center;
-  align-items: stretch;
   z-index: 5;
   touch-action: none;
   user-select: none;
+  display: flex;
+  justify-content: center;
+  align-items: stretch;
 }
 .left-resizer::before {
   content: "";
@@ -479,8 +483,13 @@ body.sidebar-hidden .sidebar-toggle .tool-icon {
 
 /* ---------- content ---------- */
 .content-wrap {
-  padding: 48px 24px 96px var(--content-pad-left);
+  display: flex;
   min-width: 0;
+}
+.content-inner {
+  flex: 1;
+  min-width: 0;
+  padding: 48px 24px 96px 0;
 }
 
 .doc-header {

@@ -262,27 +262,29 @@ export function renderPage(opts: PageOptions): string {
     ${opts.sidebarHtml}
   </aside>
   <div class="resizer" id="resizer" role="separator" aria-orientation="vertical" aria-label="Resize sidebar" tabindex="0"></div>
-  <div class="left-resizer" id="left-resizer" role="separator" aria-orientation="vertical" aria-label="Resize left margin" tabindex="0"></div>
   <main class="content-wrap">
-    <div class="doc-header">
-      <button class="tool-btn sidebar-toggle" id="sidebar-toggle" type="button" aria-label="Toggle sidebar" title="Toggle sidebar (Ctrl-\\)">
-        <span class="tool-icon">${ICON_SIDEBAR}</span>
-      </button>
-      <nav class="breadcrumbs" id="breadcrumbs">${opts.breadcrumbsHtml}</nav>
-      <div class="doc-toolbar" id="doc-toolbar">
-        <button class="tool-btn" id="btn-width-toggle" type="button" aria-label="Toggle content width" title="Toggle reading / wide view">
-          <span class="tool-icon">${ICON_EXPAND}</span>
+    <div class="left-resizer" id="left-resizer" role="separator" aria-orientation="vertical" aria-label="Resize left margin" tabindex="0"></div>
+    <div class="content-inner">
+      <div class="doc-header">
+        <button class="tool-btn sidebar-toggle" id="sidebar-toggle" type="button" aria-label="Toggle sidebar" title="Toggle sidebar (Ctrl-\\)">
+          <span class="tool-icon">${ICON_SIDEBAR}</span>
         </button>
-        <button class="tool-btn" id="btn-copy-md" type="button" aria-label="Copy raw markdown" title="Copy raw markdown">
-          <span class="tool-icon tool-icon-default">${ICON_COPY}</span>
-          <span class="tool-icon tool-icon-success">${ICON_CHECK}</span>
-        </button>
-        <button class="tool-btn" id="btn-refresh" type="button" aria-label="Refresh" title="Refresh">
-          <span class="tool-icon tool-icon-default">${ICON_REFRESH}</span>
-        </button>
+        <nav class="breadcrumbs" id="breadcrumbs">${opts.breadcrumbsHtml}</nav>
+        <div class="doc-toolbar" id="doc-toolbar">
+          <button class="tool-btn" id="btn-width-toggle" type="button" aria-label="Toggle content width" title="Toggle reading / wide view">
+            <span class="tool-icon">${ICON_EXPAND}</span>
+          </button>
+          <button class="tool-btn" id="btn-copy-md" type="button" aria-label="Copy raw markdown" title="Copy raw markdown">
+            <span class="tool-icon tool-icon-default">${ICON_COPY}</span>
+            <span class="tool-icon tool-icon-success">${ICON_CHECK}</span>
+          </button>
+          <button class="tool-btn" id="btn-refresh" type="button" aria-label="Refresh" title="Refresh">
+            <span class="tool-icon tool-icon-default">${ICON_REFRESH}</span>
+          </button>
+        </div>
       </div>
+      <article class="content" id="content" tabindex="-1">${opts.contentHtml}</article>
     </div>
-    <article class="content" id="content" tabindex="-1">${opts.contentHtml}</article>
   </main>
   <div class="content-resizer" id="content-resizer" role="separator" aria-orientation="vertical" aria-label="Resize content area" tabindex="0"></div>
   <aside class="rail" id="rail">${opts.tocHtml}</aside>
