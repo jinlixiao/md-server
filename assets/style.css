@@ -71,10 +71,55 @@ html, body {
 
 .app {
   display: grid;
-  grid-template-columns: 1fr var(--rail-w);
+  grid-template-columns: 1fr 6px var(--rail-w);
   min-height: 100vh;
-  max-width: 1100px;
+  max-width: 1400px;
   margin: 0 auto;
+}
+
+/* ---------- content-resizer (content/rail drag handle) ---------- */
+.content-resizer {
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  cursor: col-resize;
+  display: flex;
+  justify-content: center;
+  align-items: stretch;
+  z-index: 5;
+  touch-action: none;
+  user-select: none;
+}
+.content-resizer::before {
+  content: "";
+  display: block;
+  width: 1px;
+  background: var(--rule);
+  transition: background 0.12s ease, width 0.08s ease;
+}
+.content-resizer:hover::before,
+.content-resizer:focus-visible::before,
+.content-resizer.resizing::before {
+  width: 3px;
+  background: var(--accent);
+}
+.content-resizer:focus-visible { outline: none; }
+.content-resizer::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 2px;
+  height: 36px;
+  border-radius: 1px;
+  background: var(--text-faint);
+  opacity: 0.22;
+  transition: opacity 0.12s ease;
+}
+.content-resizer:hover::after,
+.content-resizer:focus-visible::after,
+.content-resizer.resizing::after {
+  opacity: 0.7;
 }
 body.resizing {
   cursor: col-resize;

@@ -283,6 +283,7 @@ export function renderPage(opts: PageOptions): string {
     </div>
     <article class="content" id="content" tabindex="-1">${opts.contentHtml}</article>
   </main>
+  <div class="content-resizer" id="content-resizer" role="separator" aria-orientation="vertical" aria-label="Resize content area" tabindex="0"></div>
   <aside class="rail" id="rail">${opts.tocHtml}</aside>
 </div>
 <div class="tooltip" id="tooltip" hidden></div>

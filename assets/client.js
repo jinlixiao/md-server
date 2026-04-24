@@ -534,6 +534,85 @@ function attachSidebarToggle() {
   });
 }
 
+// ---------- content/rail resizer (drag to adjust rail width) ----------
+const RAIL_STORAGE_KEY = "md-rail-w";
+const RAIL_MIN = 80;
+const RAIL_MAX = 400;
+
+function applyRailWidth(px) {
+  document.documentElement.style.setProperty("--rail-w", px + "px");
+}
+
+function attachContentResizer() {
+  const resizer = document.getElementById("content-resizer");
+  if (!resizer) return;
+
+  const saved = parseInt(localStorage.getItem(RAIL_STORAGE_KEY) || "", 10);
+  if (!Number.isNaN(saved) && saved >= RAIL_MIN && saved <= RAIL_MAX) {
+    applyRailWidth(saved);
+  }
+
+  resizer.addEventListener("pointerdown", (e) => {
+    e.preventDefault();
+    const activePointerId = e.pointerId;
+    const startX = e.clientX;
+    const startW = parseInt(
+      getComputedStyle(document.documentElement).getPropertyValue("--rail-w"),
+      10,
+    ) || 220;
+    document.body.classList.add("resizing");
+    resizer.classList.add("resizing");
+    try { resizer.setPointerCapture(activePointerId); } catch {}
+
+    const onMove = (ev) => {
+      if (ev.pointerId !== activePointerId) return;
+      // dragging RIGHT = making content bigger = shrinking rail
+      const dx = ev.clientX - startX;
+      const newW = Math.max(RAIL_MIN, Math.min(RAIL_MAX, startW - dx));
+      applyRailWidth(newW);
+    };
+    const onUp = (ev) => {
+      if (ev && ev.pointerId !== undefined && ev.pointerId !== activePointerId) return;
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+      window.removeEventListener("pointercancel", onUp);
+      window.removeEventListener("blur", onUp);
+      document.body.classList.remove("resizing");
+      resizer.classList.remove("resizing");
+      try { resizer.releasePointerCapture(activePointerId); } catch {}
+      const finalW = parseInt(
+        getComputedStyle(document.documentElement).getPropertyValue("--rail-w"),
+        10,
+      );
+      if (!Number.isNaN(finalW)) {
+        try { localStorage.setItem(RAIL_STORAGE_KEY, String(finalW)); } catch {}
+      }
+    };
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+    window.addEventListener("pointercancel", onUp);
+    window.addEventListener("blur", onUp);
+  });
+
+  // keyboard-accessible: arrow keys nudge rail width by 20px
+  resizer.addEventListener("keydown", (e) => {
+    if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
+    e.preventDefault();
+    const w = parseInt(getComputedStyle(document.documentElement).getPropertyValue("--rail-w"), 10) || 220;
+    // ArrowRight = shrink rail (more content), ArrowLeft = grow rail
+    const step = e.key === "ArrowRight" ? -20 : 20;
+    const newW = Math.max(RAIL_MIN, Math.min(RAIL_MAX, w + step));
+    applyRailWidth(newW);
+    try { localStorage.setItem(RAIL_STORAGE_KEY, String(newW)); } catch {}
+  });
+
+  // double-click to reset
+  resizer.addEventListener("dblclick", () => {
+    document.documentElement.style.removeProperty("--rail-w");
+    try { localStorage.removeItem(RAIL_STORAGE_KEY); } catch {}
+  });
+}
+
 // ---------- content width toggle ----------
 const WIDTH_STORAGE_KEY = "md-content-wide";
 function applyContentWidth() {
@@ -734,5 +813,6 @@ attachSidebarToggle();
 attachWidthToggle();
 attachToolbar();
 attachResizer();
+attachContentResizer();
 attachTooltip();
 attachDocFeatures();
