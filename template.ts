@@ -26,6 +26,7 @@ const ICON_COPY = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" st
 const ICON_REFRESH = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 0 1 15.5-6.3L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-15.5 6.3L3 16"/><path d="M3 21v-5h5"/></svg>`;
 const ICON_CHECK = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>`;
 const ICON_SIDEBAR = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="9" y1="3" x2="9" y2="21"/></svg>`;
+const ICON_EXPAND = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/></svg>`;
 
 let highlighter: Highlighter | null = null;
 export async function getHighlighter(): Promise<Highlighter> {
@@ -268,6 +269,9 @@ export function renderPage(opts: PageOptions): string {
       </button>
       <nav class="breadcrumbs" id="breadcrumbs">${opts.breadcrumbsHtml}</nav>
       <div class="doc-toolbar" id="doc-toolbar">
+        <button class="tool-btn" id="btn-width-toggle" type="button" aria-label="Toggle content width" title="Toggle reading / wide view">
+          <span class="tool-icon">${ICON_EXPAND}</span>
+        </button>
         <button class="tool-btn" id="btn-copy-md" type="button" aria-label="Copy raw markdown" title="Copy raw markdown">
           <span class="tool-icon tool-icon-default">${ICON_COPY}</span>
           <span class="tool-icon tool-icon-success">${ICON_CHECK}</span>

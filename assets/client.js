@@ -534,6 +534,33 @@ function attachSidebarToggle() {
   });
 }
 
+// ---------- content width toggle ----------
+const WIDTH_STORAGE_KEY = "md-content-wide";
+function applyContentWidth() {
+  const content = document.getElementById("content");
+  if (!content) return;
+  try {
+    if (localStorage.getItem(WIDTH_STORAGE_KEY) === "1") {
+      content.classList.add("wide");
+      document.body.classList.add("content-wide");
+    } else {
+      content.classList.remove("wide");
+      document.body.classList.remove("content-wide");
+    }
+  } catch {}
+}
+function attachWidthToggle() {
+  const btn = document.getElementById("btn-width-toggle");
+  if (!btn) return;
+  btn.addEventListener("click", () => {
+    const content = document.getElementById("content");
+    if (!content) return;
+    const isWide = content.classList.toggle("wide");
+    document.body.classList.toggle("content-wide", isWide);
+    try { localStorage.setItem(WIDTH_STORAGE_KEY, isWide ? "1" : "0"); } catch {}
+  });
+}
+
 // ---------- doc toolbar (once; element is not hot-swapped) ----------
 function attachToolbar() {
   const copyBtn = document.getElementById("btn-copy-md");
@@ -700,9 +727,11 @@ function attachDocFeatures() {
   attachCopyButtons();
   attachScrollSpy();
   applyFolderState();
+  applyContentWidth();
   updateRailFade();
 }
 attachSidebarToggle();
+attachWidthToggle();
 attachToolbar();
 attachResizer();
 attachTooltip();

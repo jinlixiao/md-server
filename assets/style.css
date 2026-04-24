@@ -475,6 +475,19 @@ body.sidebar-hidden .sidebar-toggle .tool-icon {
 .content > .error-state, .content > .warning {
   max-width: var(--content-max);
 }
+.content.wide > p, .content.wide > h1, .content.wide > h2,
+.content.wide > h3, .content.wide > h4,
+.content.wide > ul, .content.wide > ol, .content.wide > blockquote,
+.content.wide > hr, .content.wide > .error-state, .content.wide > .warning {
+  max-width: none;
+}
+
+/* visual feedback on the toggle button when in wide mode */
+body.content-wide #btn-width-toggle {
+  color: var(--accent);
+  background: var(--accent-soft);
+  border-color: var(--accent);
+}
 
 .content h1, .content h2, .content h3, .content h4 {
   font-family: var(--font-serif);
